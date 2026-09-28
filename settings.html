@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MilkTankAgent — Настройки</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+    body { background: #f4f4f4; padding-bottom: 40px; }
+</style>
+</head>
+<body>
+<div class="container py-4" style="max-width: 640px;">
+    <a href="index.html" class="btn btn-link ps-0">&larr; К данным</a>
+    <h1 class="h4 mb-3">Настройки</h1>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h2 class="h6">Подключение к серверу</h2>
+
+            <label class="form-label small mt-2">Адрес сервера (без https://)</label>
+            <input type="text" class="form-control" id="serverHost" placeholder="example.com">
+
+            <label class="form-label small mt-2">Путь API</label>
+            <input type="text" class="form-control" id="apiPath" placeholder="/api/measurements">
+
+            <label class="form-label small mt-2">UUID компании</label>
+            <input type="text" class="form-control" id="companyUuid">
+
+            <label class="form-label small mt-2">UUID фермы</label>
+            <input type="text" class="form-control" id="farmUuid">
+
+            <label class="form-label small mt-2">UUID стада</label>
+            <input type="text" class="form-control" id="herdUuid">
+
+            <div class="form-check mt-3">
+                <input class="form-check-input" type="checkbox" id="verifyTlsCertificate">
+                <label class="form-check-label" for="verifyTlsCertificate">Проверять TLS-сертификат сервера</label>
+            </div>
+
+            <label class="form-label small mt-3">Интервал опроса устройств (сек.)</label>
+            <input type="number" class="form-control" id="pollInterval" min="1" max="3600">
+
+            <label class="form-label small mt-2">Интервал отправки на сервер (сек.)</label>
+            <input type="number" class="form-control" id="sendInterval" min="1" max="86400">
+
+            <label class="form-label small mt-2">Хранить неотправленные данные (дней)</label>
+            <input type="number" class="form-control" id="retentionDays" min="1" max="3650">
+
+            <button class="btn btn-primary mt-3" onclick="saveSettings()">Сохранить</button>
+            <div class="text-danger small mt-2" id="settingsError"></div>
+            <div class="text-success small mt-2" id="settingsSuccess"></div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h2 class="h6">Сменить пароль</h2>
+
+            <label class="form-label small mt-2">Текущий пароль</label>
+            <input type="password" class="form-control" id="oldPassword">
+
+            <label class="form-label small mt-2">Новый пароль</label>
+            <input type="password" class="form-control" id="newPassword">
+
+            <label class="form-label small mt-2">Повторите новый пароль</label>
+            <input type="password" class="form-control" id="confirmPassword">
+
+            <button class="btn btn-primary mt-3" onclick="changePassword()">Сменить пароль</button>
+            <div class="text-danger small mt-2" id="passwordError"></div>
+            <div class="text-success small mt-2" id="passwordSuccess"></div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h2 class="h6">Локальная база данных</h2>
+            <p class="small text-muted mb-2" id="dbSize">Размер: —</p>
+            <button class="btn btn-outline-danger btn-sm" onclick="clearDatabase()">Очистить сейчас</button>
+            <div class="text-danger small mt-2" id="dbError"></div>
+            <div class="text-success small mt-2" id="dbSuccess"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const token = sessionStorage.getItem('token');
+
+if (!token) {
+    window.location.href = 'login.html';
+}
+
+function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' байт';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' КБ';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' МБ';
+}
+
+async function loadSettings() {
+    try {
+        const response = await fetch('/api/settings?token=' + encodeURIComponent(token));
+
+        if (response.status === 401) {
+            sessionStorage.removeItem('token');
+            window.location.href = 'login.html';
+            return;
+        }
+
+        const s = await response.json();
+
+        document.getElementById('serverHost').value = s.serverHost || '';
+        document.getElementById('apiPath').value = s.apiPath || '';
+        document.getElementById('companyUuid').value = s.companyUuid || '';
+        document.getElementById('farmUuid').value = s.farmUuid || '';
+        document.getElementById('herdUuid').value = s.herdUuid || '';
+        document.getElementById('verifyTlsCertificate').checked = !!s.verifyTlsCertificate;
+        document.getElementById('pollInterval').value = s.pollInterval || 5;
+        document.getElementById('sendInterval').value = s.sendInterval || 30;
+        document.getElementById('retentionDays').value = s.retentionDays || 30;
+
+    } catch (e) {
+        document.getElementById('settingsError').textContent = 'Ошибка загрузки настроек';
+    }
+}
+
+async function saveSettings() {
+    const errorBox = document.getElementById('settingsError');
+    const successBox = document.getElementById('settingsSuccess');
+    errorBox.textContent = '';
+    successBox.textContent = '';
+
+    const payload = {
+        token,
+        serverHost: document.getElementById('serverHost').value.trim(),
+        apiPath: document.getElementById('apiPath').value.trim(),
+        companyUuid: document.getElementById('companyUuid').value.trim(),
+        farmUuid: document.getElementById('farmUuid').value.trim(),
+        herdUuid: document.getElementById('herdUuid').value.trim(),
+        verifyTlsCertificate: document.getElementById('verifyTlsCertificate').checked,
+        pollInterval: parseInt(document.getElementById('pollInterval').value, 10) || 5,
+        sendInterval: parseInt(document.getElementById('sendInterval').value, 10) || 30,
+        retentionDays: parseInt(document.getElementById('retentionDays').value, 10) || 30
+    };
+
+    try {
+        const response = await fetch('/api/settings', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            errorBox.textContent = data.error || 'Не удалось сохранить настройки';
+            return;
+        }
+
+        successBox.textContent = 'Сохранено';
+
+    } catch (e) {
+        errorBox.textContent = 'Ошибка соединения с сервером';
+    }
+}
+
+async function changePassword() {
+    const errorBox = document.getElementById('passwordError');
+    const successBox = document.getElementById('passwordSuccess');
+    errorBox.textContent = '';
+    successBox.textContent = '';
+
+    const oldPassword = document.getElementById('oldPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+
+    if (!newPassword) {
+        errorBox.textContent = 'Укажите новый пароль';
+        return;
+    }
+
+    if (newPassword !== confirmPassword) {
+        errorBox.textContent = 'Пароли не совпадают';
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/change-password', {
+            method: 'POST',
+            body: JSON.stringify({ token, oldPassword, newPassword })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            errorBox.textContent = data.error || 'Не удалось сменить пароль';
+            return;
+        }
+
+        successBox.textContent = 'Пароль изменён';
+        document.getElementById('oldPassword').value = '';
+        document.getElementById('newPassword').value = '';
+        document.getElementById('confirmPassword').value = '';
+
+    } catch (e) {
+        errorBox.textContent = 'Ошибка соединения с сервером';
+    }
+}
+
+async function loadDbSize() {
+    try {
+        const response = await fetch('/api/database-info?token=' + encodeURIComponent(token));
+        const data = await response.json();
+        document.getElementById('dbSize').textContent = 'Размер: ' + formatBytes(data.sizeBytes);
+    } catch (e) {
+        document.getElementById('dbSize').textContent = 'Размер: не удалось получить';
+    }
+}
+
+async function clearDatabase() {
+    const errorBox = document.getElementById('dbError');
+    const successBox = document.getElementById('dbSuccess');
+    errorBox.textContent = '';
+    successBox.textContent = '';
+
+    if (!confirm('Очистить локальную базу? Неотправленные данные будут потеряны безвозвратно.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/database/clear', {
+            method: 'POST',
+            body: JSON.stringify({ token })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            errorBox.textContent = data.error || 'Не удалось очистить базу';
+            return;
+        }
+
+        successBox.textContent = 'База очищена';
+        loadDbSize();
+
+    } catch (e) {
+        errorBox.textContent = 'Ошибка соединения с сервером';
+    }
+}
+
+loadSettings();
+loadDbSize();
+</script>
+</body>
+</html>

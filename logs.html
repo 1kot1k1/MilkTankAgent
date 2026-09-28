@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MilkTankAgent — Журнал</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+    body { background: #f4f4f4; padding-bottom: 40px; }
+    #log {
+        background: #1e1e1e;
+        color: #d4d4d4;
+        font-family: "Consolas", "Courier New", monospace;
+        font-size: 13px;
+        padding: 12px;
+        border-radius: 6px;
+        height: 70vh;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+    .log-line.warning { color: #e6c07b; }
+    .log-line.error { color: #e06c75; }
+</style>
+</head>
+<body>
+<div class="container py-4">
+    <a href="index.html" class="btn btn-link ps-0">&larr; К данным</a>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h4 mb-0">Журнал</h1>
+        <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="autoscroll" checked>
+            <label class="form-check-label" for="autoscroll">Автопрокрутка</label>
+        </div>
+    </div>
+    <div id="log"></div>
+</div>
+
+<script>
+const token = sessionStorage.getItem('token');
+
+if (!token) {
+    window.location.href = 'login.html';
+}
+
+const logEl = document.getElementById('log');
+
+function lineClass(line) {
+    if (line.includes('WARNING')) return 'warning';
+    if (line.includes('ERROR')) return 'error';
+    return '';
+}
+
+function appendLine(line) {
+    const div = document.createElement('div');
+    div.className = 'log-line ' + lineClass(line);
+    div.textContent = line;
+    logEl.appendChild(div);
+
+    if (document.getElementById('autoscroll').checked) {
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+}
+
+async function loadInitialLog() {
+    try {
+        const response = await fetch('/api/logs?token=' + encodeURIComponent(token) + '&lines=300');
+
+        if (response.status === 401) {
+            sessionStorage.removeItem('token');
+            window.location.href = 'login.html';
+            return;
+        }
+
+        const lines = await response.json();
+
+        for (const line of lines) {
+            appendLine(line);
+        }
+
+        logEl.scrollTop = logEl.scrollHeight;
+
+    } catch (e) {
+        appendLine('[ошибка загрузки журнала]');
+    }
+}
+
+function connectWebSocket() {
+    const wsUrl = 'ws://' + window.location.hostname + ':8081/?token=' + encodeURIComponent(token);
+    const ws = new WebSocket(wsUrl);
+
+    ws.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'log') {
+                appendLine(data.line);
+            }
+        } catch (e) {
+            // ignore
+        }
+    };
+
+    ws.onclose = () => {
+        setTimeout(connectWebSocket, 3000);
+    };
+
+    ws.onerror = () => {
+        ws.close();
+    };
+}
+
+loadInitialLog();
+connectWebSocket();
+</script>
+</body>
+</html>
